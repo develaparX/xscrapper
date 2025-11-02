@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -94,18 +95,29 @@ func (tb *TelegramBot) SendTwitterMessages(response *TwitterResponse) error {
 		return nil // Don't send "no messages" notification for realtime
 	}
 
-	newMessagesCount := 0
-
-	// Send only new messages (not sent before)
+	// Filter new messages (not sent before)
+	var newMessages []TwitterMessage
 	for _, msg := range response.Data {
-		// Check if we've already sent this tweet
-		if tb.sentTweets[msg.ID] {
-			continue
+		if !tb.sentTweets[msg.ID] {
+			newMessages = append(newMessages, msg)
 		}
+	}
 
+	if len(newMessages) == 0 {
+		return nil // No new messages to send
+	}
+
+	// Sort messages by timestamp (oldest first) for chronological order
+	sort.Slice(newMessages, func(i, j int) bool {
+		timestampI, _ := strconv.ParseInt(newMessages[i].Timestamp, 10, 64)
+		timestampJ, _ := strconv.ParseInt(newMessages[j].Timestamp, 10, 64)
+		return timestampI < timestampJ
+	})
+
+	// Send messages in chronological order
+	for _, msg := range newMessages {
 		// Mark as sent
 		tb.sentTweets[msg.ID] = true
-		newMessagesCount++
 
 		messageText := tb.formatTwitterMessage(&msg)
 		if err := tb.SendMessage(messageText); err != nil {
@@ -116,9 +128,7 @@ func (tb *TelegramBot) SendTwitterMessages(response *TwitterResponse) error {
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	if newMessagesCount > 0 {
-		log.Printf("Sent %d new Twitter messages to Telegram", newMessagesCount)
-	}
+	log.Printf("Sent %d new Twitter messages to Telegram (chronological order)", len(newMessages))
 
 	return nil
 }

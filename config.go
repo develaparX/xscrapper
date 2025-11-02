@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -13,6 +14,8 @@ type Config struct {
 	// Authentication
 	BearerToken string `json:"bearer_token"`
 	Cookies     string `json:"cookies"`
+	Email       string `json:"email"`       // For auto token refresh
+	Password    string `json:"password"`    // For auto token refresh
 
 	// Device & Client Info
 	DeviceID      string `json:"device_id"`
@@ -106,6 +109,14 @@ func LoadConfig() *Config {
 		config.TelegramChatID = telegramChatID
 		log.Println("Telegram chat ID loaded from environment")
 	}
+	if email := os.Getenv("GMGN_EMAIL"); email != "" {
+		config.Email = email
+		log.Println("GMGN email loaded from environment")
+	}
+	if password := os.Getenv("GMGN_PASSWORD"); password != "" {
+		config.Password = password
+		log.Println("GMGN password loaded from environment")
+	}
 
 	return config
 }
@@ -117,4 +128,48 @@ func (c *Config) SaveConfig() error {
 		return err
 	}
 	return os.WriteFile("config.json", data, 0644)
+}
+
+// SaveTokensToEnv saves bearer token and cookies to .env file
+func (c *Config) SaveTokensToEnv() error {
+	// Read current .env file
+	envContent := ""
+	if data, err := os.ReadFile(".env"); err == nil {
+		envContent = string(data)
+	}
+
+	// Update or add GMGN_BEARER_TOKEN
+	envContent = updateEnvVar(envContent, "GMGN_BEARER_TOKEN", c.BearerToken)
+	
+	// Update or add GMGN_COOKIES
+	envContent = updateEnvVar(envContent, "GMGN_COOKIES", c.Cookies)
+
+	// Write back to .env file
+	if err := os.WriteFile(".env", []byte(envContent), 0644); err != nil {
+		return err
+	}
+
+	log.Println("Successfully saved bearer token and cookies to .env file")
+	return nil
+}
+
+// updateEnvVar updates or adds an environment variable in the env content
+func updateEnvVar(envContent, key, value string) string {
+	lines := strings.Split(envContent, "\n")
+	updated := false
+	
+	for i, line := range lines {
+		if strings.HasPrefix(line, key+"=") || strings.HasPrefix(line, "# "+key+"=") {
+			lines[i] = key + "=" + value
+			updated = true
+			break
+		}
+	}
+	
+	if !updated {
+		// Add new line if not found
+		lines = append(lines, key+"="+value)
+	}
+	
+	return strings.Join(lines, "\n")
 }

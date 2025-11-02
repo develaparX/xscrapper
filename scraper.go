@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/andybalholm/brotli"
 )
@@ -20,17 +22,23 @@ func min(a, b int) int {
 }
 
 type GMGNScraper struct {
-	config     *Config
-	httpClient *http.Client
+	config      *Config
+	httpClient  *http.Client
+	authManager *AuthManager
 }
 
 func NewGMGNScraper(config *Config) *GMGNScraper {
-	return &GMGNScraper{
+	scraper := &GMGNScraper{
 		config: config,
 		httpClient: &http.Client{
 			Timeout: config.Timeout,
 		},
 	}
+	
+	// Initialize auth manager for auto token refresh
+	scraper.authManager = NewAuthManager(config)
+	
+	return scraper
 }
 
 // GetTwitterMessages fetches Twitter messages from GMGN API
@@ -102,6 +110,16 @@ func (s *GMGNScraper) GetFollowingWallets() (*WalletsResponse, error) {
 
 // makeRequest makes an authenticated HTTP request to GMGN API
 func (s *GMGNScraper) makeRequest(url string, target interface{}) error {
+	return s.makeRequestWithRetry(url, target, 0)
+}
+
+// makeRequestWithRetry makes an authenticated HTTP request with retry counter
+func (s *GMGNScraper) makeRequestWithRetry(url string, target interface{}, retryCount int) error {
+	const maxRetries = 3
+	
+	if retryCount >= maxRetries {
+		return fmt.Errorf("max retries (%d) exceeded for request", maxRetries)
+	}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("error creating request: %w", err)
@@ -141,9 +159,28 @@ func (s *GMGNScraper) makeRequest(url string, target interface{}) error {
 
 
 
-	// Check for authentication error
+	// Check for authentication error and try to refresh token
 	if resp.StatusCode == 401 {
-		return fmt.Errorf("unauthorized: please check your bearer token and cookies")
+		log.Printf("Authentication failed (attempt %d/%d) - Response: %s", retryCount+1, maxRetries, string(body))
+		
+		// Only try to refresh on first attempt to avoid infinite loop
+		if retryCount == 0 {
+			// Force token refresh on 401
+			log.Println("Forcing token refresh due to 401 error...")
+			s.authManager.lastRefresh = time.Time{} // Reset to force refresh
+			
+			// Try to refresh token
+			if err := s.authManager.RefreshTokenIfNeeded(); err != nil {
+				return fmt.Errorf("failed to refresh token: %w", err)
+			}
+			
+			// Retry the request with new token and increment retry count
+			log.Printf("Retrying request with refreshed token (attempt %d/%d)...", retryCount+1, maxRetries)
+			return s.makeRequestWithRetry(url, target, retryCount+1)
+		} else {
+			// Don't retry refresh on subsequent attempts
+			return fmt.Errorf("authentication failed after token refresh attempt")
+		}
 	}
 
 	if resp.StatusCode != 200 {

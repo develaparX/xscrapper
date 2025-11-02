@@ -1,0 +1,71 @@
+services:
+  gmgn-scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gmgn-telegram-bot
+    restart: unless-stopped
+    environment:
+      # GMGN API Configuration
+      - GMGN_BEARER_TOKEN=${GMGN_BEARER_TOKEN}
+      - GMGN_COOKIES=${GMGN_COOKIES}
+      - GMGN_DEVICE_ID=${GMGN_DEVICE_ID:-7754041a-7df7-4454-80aa-2160aec01882}
+      - GMGN_CHAIN=${GMGN_CHAIN:-bsc}
+
+      # Telegram Bot Configuration
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+    command: ["-api=twitter", "-telegram", "-refresh"]
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    networks:
+      - gmgn-network
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "xscrap"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Separate service for wallet monitoring
+  gmgn-wallet-scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gmgn-wallet-bot
+    restart: unless-stopped
+    environment:
+      # GMGN API Configuration
+      - GMGN_BEARER_TOKEN=${GMGN_BEARER_TOKEN}
+      - GMGN_COOKIES=${GMGN_COOKIES}
+      - GMGN_DEVICE_ID=${GMGN_DEVICE_ID:-7754041a-7df7-4454-80aa-2160aec01882}
+      - GMGN_CHAIN=${GMGN_CHAIN:-bsc}
+
+      # Telegram Bot Configuration (use different chat for wallets if needed)
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_WALLET_CHAT_ID:-${TELEGRAM_CHAT_ID}}
+    command: ["-api=wallets", "-telegram", "-refresh"]
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    networks:
+      - gmgn-network
+    profiles:
+      - wallets # Only start this service when 'wallets' profile is specified
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "xscrap"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  gmgn-network:
+    driver: bridge
+
+volumes:
+  logs:
+    driver: local
+  data:
+    driver: local

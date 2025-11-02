@@ -19,12 +19,24 @@ func main() {
 
 	// Load config from environment or config file
 	config := LoadConfig()
-	if config.BearerToken == "" {
-		log.Fatal("Bearer token is required. Set GMGN_BEARER_TOKEN environment variable or edit config.json")
-	}
-
+	
 	// Create scraper
 	scraper := NewGMGNScraper(config)
+	
+	// If no bearer token, try to login automatically
+	if config.BearerToken == "" {
+		log.Println("No bearer token found, attempting automatic login...")
+		if config.Email == "" || config.Password == "" {
+			log.Fatal("No bearer token and no login credentials found. Please set GMGN_EMAIL and GMGN_PASSWORD environment variables")
+		}
+		
+		// Force login attempt
+		if err := scraper.authManager.RefreshTokenIfNeeded(); err != nil {
+			log.Fatalf("Automatic login failed: %v", err)
+		}
+		
+		log.Println("Automatic login successful!")
+	}
 
 	// Initialize Telegram bot if needed
 	var telegramBot *TelegramBot
