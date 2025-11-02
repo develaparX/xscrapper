@@ -15,6 +15,7 @@ func main() {
 	outputFile := flag.String("output", "", "Output file path (optional, default: stdout)")
 	autoRefresh := flag.Bool("refresh", false, "Auto refresh every 10 seconds")
 	sendToTelegram := flag.Bool("telegram", false, "Send results to Telegram")
+	monitor := flag.Bool("monitor", false, "Start continuous Twitter monitoring with robust token management")
 	flag.Parse()
 
 	// Load config from environment or config file
@@ -26,11 +27,8 @@ func main() {
 	// If no bearer token, try to login automatically
 	if config.BearerToken == "" {
 		log.Println("No bearer token found, attempting automatic login...")
-		if config.Email == "" || config.Password == "" {
-			log.Fatal("No bearer token and no login credentials found. Please set GMGN_EMAIL and GMGN_PASSWORD environment variables")
-		}
 		
-		// Force login attempt
+		// Force login attempt using Telegram login
 		if err := scraper.authManager.RefreshTokenIfNeeded(); err != nil {
 			log.Fatalf("Automatic login failed: %v", err)
 		}
@@ -49,7 +47,16 @@ func main() {
 		log.Println("Telegram bot initialized successfully")
 	}
 
-	// Run scraper
+	// Start monitoring mode if requested
+	if *monitor {
+		log.Println("Starting Twitter/X monitoring mode...")
+		
+		// Start Twitter monitoring (this will run indefinitely)
+		scraper.authManager.StartTwitterMonitoring()
+		return
+	}
+
+	// Run scraper in traditional mode
 	for {
 		var data interface{}
 		var err error
