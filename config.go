@@ -34,6 +34,10 @@ type Config struct {
 	Baggage     string `json:"baggage"`
 	SentryTrace string `json:"sentry_trace"`
 
+	// Telegram Bot Configuration
+	TelegramBotToken string `json:"telegram_bot_token"`
+	TelegramChatID   string `json:"telegram_chat_id"`
+
 	// HTTP Client settings
 	Timeout time.Duration `json:"-"`
 }
@@ -93,6 +97,14 @@ func LoadConfig() *Config {
 	if chain := os.Getenv("GMGN_CHAIN"); chain != "" {
 		config.Chain = chain
 		config.Network = chain
+	}
+	if telegramToken := os.Getenv("TELEGRAM_BOT_TOKEN"); telegramToken != "" {
+		config.TelegramBotToken = telegramToken
+		log.Println("Telegram bot token loaded from environment")
+	}
+	if telegramChatID := os.Getenv("TELEGRAM_CHAT_ID"); telegramChatID != "" {
+		config.TelegramChatID = telegramChatID
+		log.Println("Telegram chat ID loaded from environment")
 	}
 
 	return config
