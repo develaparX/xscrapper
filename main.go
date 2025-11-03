@@ -21,7 +21,7 @@ func main() {
 
 	// Load config from environment or config file
 	config := LoadConfig()
-	
+
 	// Create scraper with optional browser automation
 	var scraper *GMGNScraper
 	if *useBrowser || *monitor {
@@ -38,16 +38,16 @@ func main() {
 	} else {
 		scraper = NewGMGNScraper(config)
 	}
-	
+
 	// If no bearer token, try to login automatically
 	if config.BearerToken == "" {
 		log.Println("No bearer token found, attempting automatic login...")
-		
+
 		// Force login attempt using Telegram login
 		if err := scraper.authManager.RefreshTokenIfNeeded(); err != nil {
 			log.Fatalf("Automatic login failed: %v", err)
 		}
-		
+
 		log.Println("Automatic login successful!")
 	}
 
@@ -65,7 +65,7 @@ func main() {
 	// Start monitoring mode if requested
 	if *monitor {
 		log.Println("Starting Twitter/X monitoring mode...")
-		
+
 		// Start Twitter monitoring (this will run indefinitely)
 		scraper.authManager.StartTwitterMonitoring()
 		return
@@ -140,7 +140,7 @@ func main() {
 			break
 		}
 
-		log.Println("Waiting 10 seconds before next refresh...")
-		time.Sleep(10 * time.Second)
+		log.Println("Waiting 5 seconds before next refresh...")
+		time.Sleep(5 * time.Second)
 	}
 }
