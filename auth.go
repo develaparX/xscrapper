@@ -1139,13 +1139,35 @@ func (am *AuthManager) performAutomatedTelegramLogin(telegramBotURL string) erro
 	
 	log.Printf("Processing Telegram login URL with browser automation: %s", loginURL)
 	
-	// Test if chromium can be executed
-	log.Println("Testing chromium executable...")
-	testCmd := "chromium --version"
-	if output, err := exec.Command("sh", "-c", testCmd).Output(); err != nil {
-		return fmt.Errorf("chromium test failed: %w", err)
-	} else {
-		log.Printf("Chromium test successful: %s", string(output))
+	// Test if thorium browser can be executed
+	log.Println("Testing thorium browser executable...")
+	
+	// Try different thorium paths
+	thoriumPaths := []string{
+		"thorium-browser",
+		"/usr/bin/thorium-browser",
+		"/opt/thorium/thorium",
+		"/usr/local/bin/thorium-browser",
+	}
+	
+	var testOutput string
+	var testErr error
+	
+	for _, path := range thoriumPaths {
+		testCmd := path + " --version"
+		if output, err := exec.Command("sh", "-c", testCmd).Output(); err == nil {
+			testOutput = string(output)
+			log.Printf("Thorium browser found at: %s", path)
+			log.Printf("Thorium browser test successful: %s", testOutput)
+			break
+		} else {
+			testErr = err
+			log.Printf("Thorium not found at: %s", path)
+		}
+	}
+	
+	if testOutput == "" {
+		return fmt.Errorf("thorium browser not found in any standard location: %w", testErr)
 	}
 	
 	// Create context with timeout
