@@ -50,7 +50,7 @@ func (am *AuthManager) performTelegramLogin() error {
 	log.Println("Starting Telegram login process...")
 	
 	// Print Telegram login link to console
-	telegramBotURL := "https://t.me/gmgnaibot?start=i_qr3H3v9g_l_en_t_13c322d6d1117040"
+	telegramBotURL := "https://t.me/gmgnaibot?start=i__l_en_t_f858cac7964a6bf9"
 	
 	fmt.Println("\n🔐 GMGN Telegram Login Required")
 	fmt.Println("================================")

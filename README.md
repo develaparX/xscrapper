@@ -1,265 +1,351 @@
-# GMGN Telegram Bot
+# GMGN Twitter/X Tracker
 
-Real-time monitoring bot untuk GMGN.ai yang mengirim notifikasi Twitter messages dan wallet data langsung ke Telegram.
+A robust Twitter/X monitoring bot for GMGN.ai with automatic token management and browser automation.
 
-## 🚀 Features
+## Features
 
-- ✅ Real-time monitoring Twitter messages dari GMGN.ai
-- ✅ Real-time monitoring wallet data
-- ✅ Telegram bot integration
-- ✅ Duplicate prevention (tidak spam pesan lama)
-- ✅ Auto refresh setiap 10 detik
-- ✅ Docker support dengan Docker Compose
-- ✅ Memory management dengan auto cleanup
-- ✅ Health checks dan restart otomatis
+- 🔐 **Automated Telegram Login** with browser automation
+- 🔄 **Robust Token Management** with auto-refresh and rotation
+- 🍪 **Cookie Management** for session persistence
+- 🐦 **Real-time Twitter/X Tracking** with keyword filtering
+- 📱 **Telegram Notifications** for new relevant tweets
+- 🖥️ **VPS Compatible** with KasmVNC support
 
-## 📋 Prerequisites
+## Prerequisites
 
-1. **Docker & Docker Compose** terinstall
-2. **Telegram Bot Token** dari @BotFather
-3. **GMGN.ai Account** dengan bearer token dan cookies
+### System Requirements
 
-## 🛠️ Setup
+- Ubuntu 24.04 LTS (VPS compatible)
+- Go 1.19 or higher
+- Thorium Browser (or Chromium)
+- KasmVNC (for VPS GUI access)
 
-### 1. Clone Repository
+### Required Accounts
+
+- GMGN.ai account
+- Telegram Bot Token
+- Telegram Chat ID
+
+## Installation on Ubuntu 24 VPS
+
+### Step 1: Update System
 
 ```bash
-git clone <repository-url>
-cd gmgn-telegram-bot
+sudo apt update && sudo apt upgrade -y
 ```
 
-### 2. Setup Environment Variables
+### Step 2: Install Go
 
 ```bash
-# Copy template environment file
+# Download and install Go
+wget https://go.dev/dl/go1.21.5.linux-amd64.tar.gz
+sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.21.5.linux-amd64.tar.gz
+
+# Add Go to PATH
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+source ~/.bashrc
+
+# Verify installation
+go version
+```
+
+### Step 3: Install Dependencies
+
+```bash
+# Install required packages
+sudo apt install -y git curl wget unzip
+
+# Install additional dependencies for browser automation
+sudo apt install -y libnss3 libatk-bridge2.0-0 libdrm2 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libxss1 libasound2
+```
+
+### Step 4: Install Thorium Browser (if not already installed)
+
+```bash
+# Download Thorium Browser
+wget https://github.com/Alex313031/thorium/releases/download/M117.0.5938.157/thorium-browser_117.0.5938.157_amd64.deb
+
+# Install Thorium
+sudo dpkg -i thorium-browser_117.0.5938.157_amd64.deb
+sudo apt-get install -f  # Fix any dependency issues
+
+# Verify installation
+thorium-browser --version
+```
+
+### Step 5: Setup KasmVNC (if not already installed)
+
+```bash
+# Install KasmVNC
+wget https://github.com/kasmtech/KasmVNC/releases/download/v1.2.0/kasmvncserver_jammy_1.2.0_amd64.deb
+sudo dpkg -i kasmvncserver_jammy_1.2.0_amd64.deb
+sudo apt-get install -f
+
+# Setup VNC password
+vncpasswd
+
+# Start KasmVNC (replace :1 with your preferred display)
+vncserver :1 -geometry 1920x1080 -depth 24
+```
+
+### Step 6: Clone and Setup Project
+
+```bash
+# Clone the repository
+git clone <your-repo-url>
+cd go-xscrapper-tele
+
+# Install Go dependencies
+go mod tidy
+```
+
+### Step 7: Configure Environment Variables
+
+```bash
+# Copy example environment file
 cp .env.example .env
 
-# Edit .env file dengan konfigurasi Anda
+# Edit environment file
 nano .env
 ```
 
-### 3. Dapatkan GMGN Bearer Token & Cookies
+Add the following configuration to `.env`:
 
-1. Login ke https://gmgn.ai
-2. Buka Developer Tools (F12)
-3. Pergi ke Network tab
-4. Refresh halaman atau lakukan request
-5. Cari request ke API gmgn.ai
-6. Copy `Authorization: Bearer ...` dan `Cookie: ...` headers
+```env
+# GMGN Authentication (will be auto-generated via Telegram login)
+BEARER_TOKEN=
+COOKIES=
 
-### 4. Setup Telegram Bot
+# Telegram Bot Configuration
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_CHAT_ID=your_chat_id_here
 
-1. Chat dengan @BotFather di Telegram
-2. Ketik `/newbot` dan ikuti instruksi
-3. Dapatkan bot token
-4. Tambahkan bot ke grup/channel atau chat pribadi
-5. Dapatkan chat ID:
-   - Kirim pesan ke bot
-   - Buka: `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates`
-   - Cari `"chat":{"id":-1001234567890}` di response
+# GMGN Credentials (optional, for fallback)
+GMGN_EMAIL=your_email@example.com
+GMGN_PASSWORD=your_password_here
+```
 
-## 🐳 Running with Docker Compose
+### Step 8: Get Telegram Bot Token and Chat ID
 
-### Easy Way (Using Helper Script)
+#### Create Telegram Bot:
+
+1. Message [@BotFather](https://t.me/botfather) on Telegram
+2. Send `/newbot`
+3. Follow instructions to create your bot
+4. Copy the bot token
+
+#### Get Chat ID:
+
+1. Start a chat with your bot
+2. Send any message to your bot
+3. Visit: `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates`
+4. Find your chat ID in the response
+
+## Usage
+
+### Method 1: Traditional Twitter Monitoring (Simple)
 
 ```bash
-# Make script executable
-chmod +x run.sh
+# Monitor Twitter with Telegram notifications every 10 seconds
+go run . -api=twitter -telegram -refresh
+```
 
-# Start Twitter monitoring only
-./run.sh start
+### Method 2: Advanced Monitoring with Token Management
 
-# Start both Twitter and Wallet monitoring
-./run.sh start-all
+```bash
+# Start robust monitoring with automatic token rotation
+go run . -monitor
+```
 
-# View logs in real-time
-./run.sh logs -f
+### Method 3: One-time Data Fetch
 
-# View Twitter logs only
-./run.sh logs-twitter -f
+```bash
+# Fetch Twitter data once
+go run . -api=twitter
 
-# Stop all services
-./run.sh stop
+# Fetch wallet data once
+go run . -api=wallets
+
+# Send to Telegram
+go run . -api=twitter -telegram
+```
+
+## First Time Setup (Authentication)
+
+When you run the bot for the first time, it will prompt for Telegram login:
+
+### Option 1: Automated Browser Login (Recommended for VPS)
+
+1. Run the bot: `go run . -monitor`
+2. When prompted, type: `auto`
+3. The system will open Thorium browser automatically
+4. Click the Telegram bot link that appears
+5. Complete the Telegram login process
+6. The system will automatically extract the token
+
+### Option 2: Manual Login
+
+1. Run the bot: `go run . -monitor`
+2. Click the Telegram bot link manually in your browser
+3. Complete the login process
+4. Copy the response URL (format: `https://gmgn.ai/tglogin?user_id=...`)
+5. Paste it when prompted
+
+## VPS-Specific Instructions
+
+### Accessing GUI on VPS via KasmVNC
+
+1. **Connect to VNC:**
+
+   ```bash
+   # If KasmVNC is running on display :1
+   # Access via web browser: http://your-vps-ip:6901
+   # Or use VNC client: your-vps-ip:5901
+   ```
+
+2. **Set Display Environment:**
+
+   ```bash
+   export DISPLAY=:1
+   ```
+
+3. **Run with GUI:**
+   ```bash
+   # Make sure you're in the VNC session
+   cd /path/to/go-xscrapper-tele
+   go run . -monitor
+   ```
+
+### Running as Background Service
+
+Create a systemd service for continuous monitoring:
+
+```bash
+# Create service file
+sudo nano /etc/systemd/system/gmgn-tracker.service
+```
+
+Add the following content:
+
+```ini
+[Unit]
+Description=GMGN Twitter Tracker
+After=network.target
+
+[Service]
+Type=simple
+User=your-username
+WorkingDirectory=/path/to/go-xscrapper-tele
+Environment=DISPLAY=:1
+ExecStart=/usr/local/go/bin/go run . -monitor
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable gmgn-tracker
+sudo systemctl start gmgn-tracker
 
 # Check status
-./run.sh status
-
-# See all available commands
-./run.sh help
-```
-
-### Manual Docker Compose Commands
-
-```bash
-# Twitter monitoring only
-docker compose up -d
-
-# Twitter + Wallet monitoring
-docker compose --profile wallets up -d
+sudo systemctl status gmgn-tracker
 
 # View logs
-docker compose logs -f gmgn-scraper
-
-# Stop services
-docker compose down
-
-# Build images
-docker compose build
-
-# Restart services
-docker compose restart
-
-# Update and restart
-docker compose pull && docker compose up -d
+sudo journalctl -u gmgn-tracker -f
 ```
 
-## 🔧 Configuration Options
+## Configuration Options
+
+### Command Line Flags
+
+- `-api=twitter`: Monitor Twitter/X messages
+- `-api=wallets`: Monitor wallet data
+- `-telegram`: Send notifications to Telegram
+- `-refresh`: Auto-refresh every 10 seconds
+- `-monitor`: Start advanced monitoring with token management
+- `-output=file.json`: Save output to file
 
 ### Environment Variables
 
-```env
-# GMGN API
-GMGN_BEARER_TOKEN=your_token_here
-GMGN_COOKIES=your_cookies_here
-GMGN_DEVICE_ID=7754041a-7df7-4454-80aa-2160aec01882
-GMGN_CHAIN=bsc
+- `BEARER_TOKEN`: GMGN API bearer token (auto-generated)
+- `COOKIES`: Session cookies (auto-managed)
+- `TELEGRAM_BOT_TOKEN`: Your Telegram bot token
+- `TELEGRAM_CHAT_ID`: Your Telegram chat ID
+- `GMGN_EMAIL`: GMGN account email (optional)
+- `GMGN_PASSWORD`: GMGN account password (optional)
 
-# Telegram
-TELEGRAM_BOT_TOKEN=1234567890:ABC...
-TELEGRAM_CHAT_ID=-1001234567890
-TELEGRAM_WALLET_CHAT_ID=-1001234567891  # Optional: separate chat for wallets
-```
-
-### Service Profiles
-
-- **Default**: Hanya Twitter monitoring
-- **wallets**: Twitter + Wallet monitoring
-
-## 📱 Manual Usage (Without Docker)
-
-### Prerequisites
-
-```bash
-# Install Go 1.25+
-go version
-
-# Install dependencies
-go mod download
-```
-
-### Commands
-
-```bash
-# Twitter monitoring (realtime)
-go run . -api=twitter -telegram -refresh
-
-# Wallet monitoring (realtime)
-go run . -api=wallets -telegram -refresh
-
-# Single check (no realtime)
-go run . -api=twitter -telegram
-go run . -api=wallets -telegram
-
-# Save to file + send to Telegram
-go run . -api=twitter -telegram -output=data.json
-
-# Console output only (no Telegram)
-go run . -api=twitter
-```
-
-## 📊 Monitoring & Logs
-
-### Docker Logs
-
-```bash
-# View real-time logs
-docker compose logs -f
-
-# View specific service logs
-docker compose logs -f gmgn-scraper
-docker compose logs -f gmgn-wallet-scraper
-
-# View last 100 lines
-docker compose logs --tail=100 gmgn-scraper
-```
-
-### Health Checks
-
-Services include health checks yang akan restart container jika aplikasi crash.
-
-## 🔄 Updates
-
-### Update Application
-
-```bash
-# Pull latest changes
-git pull
-
-# Rebuild and restart
-docker compose down
-docker compose build --no-cache
-docker compose up -d
-```
-
-### Update Dependencies
-
-```bash
-# Update Go modules
-go mod tidy
-go mod download
-
-# Rebuild Docker images
-docker compose build --no-cache
-```
-
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
-1. **401 Unauthorized Error**
+1. **Browser not opening:**
 
-   - Bearer token expired → Update GMGN_BEARER_TOKEN
-   - Cookies expired → Update GMGN_COOKIES
+   ```bash
+   # Check if Thorium is installed
+   thorium-browser --version
 
-2. **Telegram Bot Error**
+   # Check display
+   echo $DISPLAY
 
-   - Invalid token → Check TELEGRAM_BOT_TOKEN
-   - Can't send message → Check TELEGRAM_CHAT_ID
-   - Bot not in group → Add bot to Telegram group/channel
+   # Test browser manually
+   thorium-browser --no-sandbox --disable-gpu
+   ```
 
-3. **Container Keeps Restarting**
-   - Check logs: `docker compose logs gmgn-scraper`
-   - Verify environment variables
-   - Check network connectivity
+2. **VNC connection issues:**
 
-### Debug Commands
+   ```bash
+   # Restart VNC server
+   vncserver -kill :1
+   vncserver :1 -geometry 1920x1080 -depth 24
+   ```
 
-```bash
-# Check container status
-docker compose ps
+3. **Token validation fails:**
 
-# Enter container for debugging
-docker compose exec gmgn-scraper sh
+   - The bot will automatically refresh tokens
+   - Check Telegram notifications for refresh status
+   - Manually restart if needed
 
-# Check environment variables
-docker compose exec gmgn-scraper env
+4. **Permission issues:**
+   ```bash
+   # Fix permissions
+   chmod +x run.sh
+   sudo chown -R $USER:$USER .
+   ```
 
-# Test single run
-docker compose run --rm gmgn-scraper -api=twitter -telegram
-```
+### Logs and Debugging
 
-## 📝 API Endpoints
+- Bot logs are printed to console
+- Use `sudo journalctl -u gmgn-tracker -f` for service logs
+- Check Telegram for authentication notifications
 
-- **Twitter Messages**: `https://gmgn.ai/vas/api/v1/twitter/messages`
-- **Following Wallets**: `https://gmgn.ai/api/v1/follow/following_wallets_v2`
+## Security Notes
 
-## 🔒 Security Notes
+- Never share your `.env` file
+- Keep your Telegram bot token secure
+- The bot automatically manages authentication tokens
+- Cookies and tokens are stored locally in `.env`
 
-- Jangan commit file `.env` ke repository
-- Rotate bearer token dan cookies secara berkala
-- Gunakan environment variables untuk production
-- Limit akses ke Telegram bot token
+## Performance Tips
 
-## 📄 License
+- Use `-monitor` mode for production (more efficient)
+- Adjust refresh intervals based on your needs
+- Monitor VPS resources (CPU/Memory usage)
+- Use systemd service for automatic restarts
 
-MIT License - see LICENSE file for details.
+## Support
+
+If you encounter issues:
+
+1. Check the logs for error messages
+2. Verify all environment variables are set
+3. Ensure Thorium browser is properly installed
+4. Test VNC connection manually
+
+## License
+
+[Your License Here]
