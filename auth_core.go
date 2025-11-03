@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -99,8 +100,17 @@ func (am *AuthManager) StartPersistentBrowser() error {
 	
 	log.Println("Starting persistent browser session...")
 	
+	// Find available browser executable
+	browserPath := am.findBrowserExecutable()
+	if browserPath == "" {
+		return fmt.Errorf("no supported browser found (tried: thorium-browser, google-chrome, chromium-browser, chromium)")
+	}
+	
+	log.Printf("Using browser: %s", browserPath)
+	
 	// Create Chrome context with options
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.ExecPath(browserPath), // Use detected browser
 		chromedp.Flag("headless", false), // Keep browser visible
 		chromedp.Flag("disable-gpu", false),
 		chromedp.Flag("disable-dev-shm-usage", true),
@@ -444,4 +454,27 @@ func (am *AuthManager) waitForBrowserLogin() error {
 	}
 	
 	return fmt.Errorf("timeout waiting for browser login completion")
+}
+
+// findBrowserExecutable finds available browser executable
+func (am *AuthManager) findBrowserExecutable() string {
+	// List of browsers to try in order of preference
+	browsers := []string{
+		"thorium-browser",    // Thorium browser (your VPS)
+		"google-chrome",      // Google Chrome
+		"google-chrome-stable", // Google Chrome stable
+		"chromium-browser",   // Chromium browser
+		"chromium",          // Chromium
+		"chrome",            // Generic chrome
+	}
+	
+	for _, browser := range browsers {
+		if path, err := exec.LookPath(browser); err == nil {
+			log.Printf("Found browser executable: %s at %s", browser, path)
+			return path
+		}
+	}
+	
+	log.Println("No supported browser found in PATH")
+	return ""
 }
