@@ -16,13 +16,28 @@ func main() {
 	autoRefresh := flag.Bool("refresh", false, "Auto refresh every 10 seconds")
 	sendToTelegram := flag.Bool("telegram", false, "Send results to Telegram")
 	monitor := flag.Bool("monitor", false, "Start continuous Twitter monitoring with robust token management")
+	useBrowser := flag.Bool("browser", false, "Use persistent browser for automatic token management")
 	flag.Parse()
 
 	// Load config from environment or config file
 	config := LoadConfig()
 	
-	// Create scraper
-	scraper := NewGMGNScraper(config)
+	// Create scraper with optional browser automation
+	var scraper *GMGNScraper
+	if *useBrowser || *monitor {
+		log.Println("Initializing scraper with browser automation...")
+		scraperWithBrowser, err := NewGMGNScraperWithBrowser(config)
+		if err != nil {
+			log.Printf("Failed to initialize browser automation: %v", err)
+			log.Println("Falling back to standard scraper...")
+			scraper = NewGMGNScraper(config)
+		} else {
+			scraper = scraperWithBrowser
+			log.Println("✅ Browser automation initialized successfully")
+		}
+	} else {
+		scraper = NewGMGNScraper(config)
+	}
 	
 	// If no bearer token, try to login automatically
 	if config.BearerToken == "" {

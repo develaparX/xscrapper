@@ -187,7 +187,7 @@ func (tb *TelegramBot) formatTwitterMessage(msg *TwitterMessage) string {
 	var builder strings.Builder
 
 	// Header with user info
-	builder.WriteString("🐦 Twitter Message\n\n")
+	builder.WriteString("🐦 X Message\n\n")
 	builder.WriteString(fmt.Sprintf("👤 %s (@%s)\n", 
 		msg.User.Name, 
 		msg.User.ScreenName))
@@ -211,16 +211,16 @@ func (tb *TelegramBot) formatTwitterMessage(msg *TwitterMessage) string {
 	builder.WriteString(msg.Content.Text)
 
 	// Token info if available
-	if msg.Token != nil {
-		builder.WriteString("\n\n💰 Token Info:\n")
-		builder.WriteString(fmt.Sprintf("🪙 %s (%s)\n", msg.Token.Symbol, msg.Token.Chain))
-		if msg.Token.Price != "" {
-			builder.WriteString(fmt.Sprintf("💵 Price: $%s\n", msg.Token.Price))
-		}
-		if msg.Token.MarketCap != "" {
-			builder.WriteString(fmt.Sprintf("📊 Market Cap: $%s\n", msg.Token.MarketCap))
-		}
-	}
+	// if msg.Token != nil {
+	// 	builder.WriteString("\n\n💰 Token Info:\n")
+	// 	builder.WriteString(fmt.Sprintf("🪙 %s (%s)\n", msg.Token.Symbol, msg.Token.Chain))
+	// 	if msg.Token.Price != "" {
+	// 		builder.WriteString(fmt.Sprintf("💵 Price: $%s\n", msg.Token.Price))
+	// 	}
+	// 	if msg.Token.MarketCap != "" {
+	// 		builder.WriteString(fmt.Sprintf("📊 Market Cap: $%s\n", msg.Token.MarketCap))
+	// 	}
+	// }
 
 	// Source info for reposts
 	if msg.SourceUser != nil {

@@ -41,6 +41,26 @@ func NewGMGNScraper(config *Config) *GMGNScraper {
 	return scraper
 }
 
+// NewGMGNScraperWithBrowser creates a new GMGNScraper with browser automation
+func NewGMGNScraperWithBrowser(config *Config) (*GMGNScraper, error) {
+	scraper := &GMGNScraper{
+		config: config,
+		httpClient: &http.Client{
+			Timeout: config.Timeout,
+		},
+	}
+	
+	// Initialize auth manager with browser automation
+	authManager, err := NewAuthManagerWithBrowser(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize auth manager with browser: %w", err)
+	}
+	
+	scraper.authManager = authManager
+	
+	return scraper, nil
+}
+
 // GetTwitterMessages fetches Twitter messages from GMGN API
 func (s *GMGNScraper) GetTwitterMessages() (*TwitterResponse, error) {
 	params := url.Values{}
