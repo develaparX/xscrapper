@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -120,8 +121,49 @@ func (tb *TelegramBot) SendTwitterMessages(response *TwitterResponse) error {
 		tb.sentTweets[msg.ID] = true
 
 		messageText := tb.formatTwitterMessage(&msg)
-		if err := tb.SendMessage(messageText); err != nil {
-			log.Printf("Failed to send message %s: %v", msg.ID, err)
+		
+		// Check if tweet has media (images)
+		if len(msg.Content.Media) > 0 {
+			var mediaURLs []string
+			for _, media := range msg.Content.Media {
+				// Only process images, skip thumbnails and videos for now
+				if media.Type == "image" && media.URL != "" {
+					mediaURLs = append(mediaURLs, media.URL)
+				}
+			}
+			
+			if len(mediaURLs) > 0 {
+				// Send media with caption
+				if len(mediaURLs) == 1 {
+					// Single image
+					if err := tb.SendPhoto(mediaURLs[0], messageText); err != nil {
+						log.Printf("Failed to send photo for message %s: %v", msg.ID, err)
+						// Fallback to text message
+						if err := tb.SendMessage(messageText); err != nil {
+							log.Printf("Failed to send fallback message %s: %v", msg.ID, err)
+						}
+					}
+				} else {
+					// Multiple images
+					if err := tb.SendMediaGroup(mediaURLs, messageText); err != nil {
+						log.Printf("Failed to send media group for message %s: %v", msg.ID, err)
+						// Fallback to text message
+						if err := tb.SendMessage(messageText); err != nil {
+							log.Printf("Failed to send fallback message %s: %v", msg.ID, err)
+						}
+					}
+				}
+			} else {
+				// No valid media URLs, send text only
+				if err := tb.SendMessage(messageText); err != nil {
+					log.Printf("Failed to send message %s: %v", msg.ID, err)
+				}
+			}
+		} else {
+			// No media, send text only
+			if err := tb.SendMessage(messageText); err != nil {
+				log.Printf("Failed to send message %s: %v", msg.ID, err)
+			}
 		}
 
 		// Small delay to avoid rate limiting
@@ -182,6 +224,63 @@ func (tb *TelegramBot) SendMessage(text string) error {
 	return nil
 }
 
+// SendPhoto sends a photo to Telegram with caption
+func (tb *TelegramBot) SendPhoto(photoURL, caption string) error {
+	// Check if URL is accessible
+	resp, err := http.Head(photoURL)
+	if err != nil || resp.StatusCode != 200 {
+		log.Printf("Photo URL not accessible: %s", photoURL)
+		return fmt.Errorf("photo URL not accessible: %s", photoURL)
+	}
+
+	photo := tgbotapi.NewPhoto(tb.chatID, tgbotapi.FileURL(photoURL))
+	photo.Caption = caption
+
+	_, err = tb.bot.Send(photo)
+	if err != nil {
+		return fmt.Errorf("failed to send photo: %w", err)
+	}
+
+	return nil
+}
+
+// SendMediaGroup sends multiple photos as a media group with caption
+func (tb *TelegramBot) SendMediaGroup(mediaURLs []string, caption string) error {
+	if len(mediaURLs) == 0 {
+		return nil
+	}
+
+	var mediaGroup []interface{}
+	
+	for i, url := range mediaURLs {
+		// Check if URL is accessible
+		resp, err := http.Head(url)
+		if err != nil || resp.StatusCode != 200 {
+			log.Printf("Media URL not accessible: %s", url)
+			continue
+		}
+
+		media := tgbotapi.NewInputMediaPhoto(tgbotapi.FileURL(url))
+		// Add caption only to the first media item
+		if i == 0 {
+			media.Caption = caption
+		}
+		mediaGroup = append(mediaGroup, media)
+	}
+
+	if len(mediaGroup) == 0 {
+		return fmt.Errorf("no accessible media URLs")
+	}
+
+	mediaGroupConfig := tgbotapi.NewMediaGroup(tb.chatID, mediaGroup)
+	_, err := tb.bot.SendMediaGroup(mediaGroupConfig)
+	if err != nil {
+		return fmt.Errorf("failed to send media group: %w", err)
+	}
+
+	return nil
+}
+
 // formatTwitterMessage formats a Twitter message for Telegram
 func (tb *TelegramBot) formatTwitterMessage(msg *TwitterMessage) string {
 	var builder strings.Builder
@@ -209,6 +308,52 @@ func (tb *TelegramBot) formatTwitterMessage(msg *TwitterMessage) string {
 	// Content
 	builder.WriteString("💬 Content:\n")
 	builder.WriteString(msg.Content.Text)
+
+	// Media info
+	if len(msg.Content.Media) > 0 {
+		var mediaTypes []string
+		imageCount := 0
+		videoCount := 0
+		
+		for _, media := range msg.Content.Media {
+			switch media.Type {
+			case "image":
+				imageCount++
+			case "video":
+				videoCount++
+			case "thumbnail":
+				// Skip thumbnails in count, they're usually paired with videos
+				continue
+			}
+		}
+		
+		if imageCount > 0 {
+			if imageCount == 1 {
+				mediaTypes = append(mediaTypes, "📸 1 Image")
+			} else {
+				mediaTypes = append(mediaTypes, fmt.Sprintf("📸 %d Images", imageCount))
+			}
+		}
+		
+		if videoCount > 0 {
+			if videoCount == 1 {
+				mediaTypes = append(mediaTypes, "🎥 1 Video")
+			} else {
+				mediaTypes = append(mediaTypes, fmt.Sprintf("🎥 %d Videos", videoCount))
+			}
+		}
+		
+		if len(mediaTypes) > 0 {
+			builder.WriteString(fmt.Sprintf("\n\n📎 Media: %s", strings.Join(mediaTypes, ", ")))
+		}
+	}
+
+	// Twitter/X link
+	if msg.TweetID != "" {
+		builder.WriteString(fmt.Sprintf("\n\n🔗 View on X: https://x.com/%s/status/%s", 
+			msg.User.ScreenName, 
+			msg.TweetID))
+	}
 
 	// Token info if available
 	// if msg.Token != nil {

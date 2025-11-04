@@ -36,14 +36,21 @@ type TwitterUser struct {
 
 // TweetContent represents tweet content
 type TweetContent struct {
-	Text string     `json:"text"`
-	URLs []TweetURL `json:"url,omitempty"`
+	Text   string      `json:"text"`
+	URLs   []TweetURL  `json:"url,omitempty"`
+	Media  []TweetMedia `json:"media,omitempty"`
 }
 
 // TweetURL represents a URL in a tweet
 type TweetURL struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
+}
+
+// TweetMedia represents media (images, videos) in a tweet
+type TweetMedia struct {
+	Type string `json:"type"` // "image", "video", "thumbnail"
+	URL  string `json:"url"`  // Direct URL to media
 }
 
 // TokenInfo represents token information
