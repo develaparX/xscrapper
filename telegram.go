@@ -305,9 +305,81 @@ func (tb *TelegramBot) formatTwitterMessage(msg *TwitterMessage) string {
 	timeStr := time.Unix(timestamp/1000, 0).Format("2006-01-02 15:04:05")
 	builder.WriteString(fmt.Sprintf("📅 %s | 📝 %s\n\n", timeStr, msg.TweetType))
 
-	// Content
-	builder.WriteString("💬 Content:\n")
-	builder.WriteString(msg.Content.Text)
+	// Handle different tweet types
+	if msg.TweetType == "follow" && msg.Action != nil && msg.Action.Follow != nil {
+		// Follow action
+		builder.WriteString("👥 Follow Action:\n")
+		followAction := msg.Action.Follow
+		
+		if followAction.Following != nil {
+			builder.WriteString(fmt.Sprintf("➡️ Started following: %s (@%s)\n", 
+				followAction.Following.Name, 
+				followAction.Following.ScreenName))
+			
+			if followAction.Following.Followers > 0 {
+				builder.WriteString(fmt.Sprintf("👥 Target Followers: %s\n", formatNumber(followAction.Following.Followers)))
+			}
+			
+			if followAction.Following.KeyFollowers > 0 {
+				builder.WriteString(fmt.Sprintf("⭐ Key Followers: %s\n", formatNumber(followAction.Following.KeyFollowers)))
+			}
+			
+			if followAction.Following.Description != "" {
+				builder.WriteString(fmt.Sprintf("📝 Bio: %s\n", followAction.Following.Description))
+			}
+			
+			if followAction.Following.JoinedAt > 0 {
+				joinedTime := time.Unix(followAction.Following.JoinedAt/1000, 0)
+				builder.WriteString(fmt.Sprintf("📅 Joined: %s\n", joinedTime.Format("Jan 2006")))
+			}
+		}
+	} else if msg.TweetType == "handle" && msg.Profile != nil {
+		// Handle change action
+		builder.WriteString("🔄 Handle Change:\n")
+		
+		if msg.Profile.BeforeHandle != "" && msg.Profile.AfterHandle != "" {
+			builder.WriteString(fmt.Sprintf("📝 Changed handle from: @%s\n", msg.Profile.BeforeHandle))
+			builder.WriteString(fmt.Sprintf("➡️ Changed handle to: @%s\n", msg.Profile.AfterHandle))
+			
+			// Show current user info
+			builder.WriteString(fmt.Sprintf("\n👤 Current Profile: %s (@%s)\n", 
+				msg.User.Name, 
+				msg.User.ScreenName))
+		}
+	} else if msg.TweetType == "name" && msg.Profile != nil {
+		// Name change action
+		builder.WriteString("✏️ Display Name Change:\n")
+		
+		if msg.Profile.BeforeName != "" && msg.Profile.AfterName != "" {
+			builder.WriteString(fmt.Sprintf("📝 Changed name from: %s\n", msg.Profile.BeforeName))
+			builder.WriteString(fmt.Sprintf("➡️ Changed name to: %s\n", msg.Profile.AfterName))
+			
+			// Show current user info
+			builder.WriteString(fmt.Sprintf("\n👤 Current Profile: %s (@%s)\n", 
+				msg.User.Name, 
+				msg.User.ScreenName))
+		}
+	} else if msg.TweetType == "description" && msg.Profile != nil {
+		// Bio/Description change action
+		builder.WriteString("📝 Bio Update:\n")
+		
+		// Handle both cases: before/after description or just current description
+		if msg.Profile.BeforeDescription != "" && msg.Profile.AfterDescription != "" {
+			builder.WriteString(fmt.Sprintf("📝 Changed bio from: %s\n", msg.Profile.BeforeDescription))
+			builder.WriteString(fmt.Sprintf("➡️ Changed bio to: %s\n", msg.Profile.AfterDescription))
+		} else if msg.Profile.Description != "" {
+			builder.WriteString(fmt.Sprintf("📝 New bio: %s\n", msg.Profile.Description))
+		}
+		
+		// Show current user info
+		builder.WriteString(fmt.Sprintf("\n👤 Current Profile: %s (@%s)\n", 
+			msg.User.Name, 
+			msg.User.ScreenName))
+	} else {
+		// Regular content
+		builder.WriteString("💬 Content:\n")
+		builder.WriteString(msg.Content.Text)
+	}
 
 	// Media info
 	if len(msg.Content.Media) > 0 {
