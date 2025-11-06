@@ -445,8 +445,55 @@ func (tb *TelegramBot) formatTwitterMessage(msg *TwitterMessage) string {
 		builder.WriteString(fmt.Sprintf("👤 %s (@%s)\n", 
 			msg.SourceUser.Name, 
 			msg.SourceUser.ScreenName))
+		
 		if msg.SourceContent != nil {
 			builder.WriteString(fmt.Sprintf("💬 %s", msg.SourceContent.Text))
+			
+			// Show media info from source content
+			if len(msg.SourceContent.Media) > 0 {
+				var sourceMediaTypes []string
+				sourceImageCount := 0
+				sourceVideoCount := 0
+				
+				for _, media := range msg.SourceContent.Media {
+					switch media.Type {
+					case "image":
+						sourceImageCount++
+					case "video":
+						sourceVideoCount++
+					case "thumbnail":
+						// Skip thumbnails in count
+						continue
+					}
+				}
+				
+				if sourceImageCount > 0 {
+					if sourceImageCount == 1 {
+						sourceMediaTypes = append(sourceMediaTypes, "📸 1 Image")
+					} else {
+						sourceMediaTypes = append(sourceMediaTypes, fmt.Sprintf("📸 %d Images", sourceImageCount))
+					}
+				}
+				
+				if sourceVideoCount > 0 {
+					if sourceVideoCount == 1 {
+						sourceMediaTypes = append(sourceMediaTypes, "🎥 1 Video")
+					} else {
+						sourceMediaTypes = append(sourceMediaTypes, fmt.Sprintf("🎥 %d Videos", sourceVideoCount))
+					}
+				}
+				
+				if len(sourceMediaTypes) > 0 {
+					builder.WriteString(fmt.Sprintf("\n📎 Original Media: %s", strings.Join(sourceMediaTypes, ", ")))
+				}
+			}
+		}
+		
+		// Add link to original tweet if source_id is available
+		if msg.SourceID != "" {
+			builder.WriteString(fmt.Sprintf("\n🔗 Original: https://x.com/%s/status/%s", 
+				msg.SourceUser.ScreenName, 
+				msg.SourceID))
 		}
 	}
 
