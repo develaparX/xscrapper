@@ -34,10 +34,10 @@ func NewGMGNScraper(config *Config) *GMGNScraper {
 			Timeout: config.Timeout,
 		},
 	}
-	
+
 	// Initialize auth manager for auto token refresh
 	scraper.authManager = NewAuthManager(config)
-	
+
 	return scraper
 }
 
@@ -49,15 +49,15 @@ func NewGMGNScraperWithBrowser(config *Config) (*GMGNScraper, error) {
 			Timeout: config.Timeout,
 		},
 	}
-	
+
 	// Initialize auth manager with browser automation
 	authManager, err := NewAuthManagerWithBrowser(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize auth manager with browser: %w", err)
 	}
-	
+
 	scraper.authManager = authManager
-	
+
 	return scraper, nil
 }
 
@@ -136,10 +136,55 @@ func (s *GMGNScraper) makeRequest(url string, target interface{}) error {
 // makeRequestWithRetry makes an authenticated HTTP request with retry counter
 func (s *GMGNScraper) makeRequestWithRetry(url string, target interface{}, retryCount int) error {
 	const maxRetries = 3
-	
+
 	if retryCount >= maxRetries {
 		return fmt.Errorf("max retries (%d) exceeded for request", maxRetries)
 	}
+
+	// Try using browser fetch if available
+	if s.authManager.IsBrowserReady() {
+		log.Printf("Fetching data using browser automation (attempt %d/%d)...", retryCount+1, maxRetries)
+
+		headers := make(map[string]string)
+		headers["Accept"] = "application/json, text/plain, */*"
+		headers["Accept-Language"] = "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7"
+		headers["Authorization"] = fmt.Sprintf("Bearer %s", s.config.BearerToken)
+		headers["Referer"] = "https://gmgn.ai/portfolio?transferType=Distribute&chain=bsc"
+		headers["Origin"] = "https://gmgn.ai"
+
+		// Add cookies to headers if needed, though browser handles cookies automatically
+		// But Fetch API might need them explicitly if credentials: 'include' is not default enough or if we want to force specific cookies
+		// Actually, browser fetch automatically sends cookies for the domain.
+
+		body, err := s.authManager.FetchWithBrowser(url, headers)
+		if err == nil {
+			// Parse JSON response
+			err = json.Unmarshal(body, target)
+			if err != nil {
+				return fmt.Errorf("error parsing JSON from browser fetch: %w", err)
+			}
+
+			// Check for API error response
+			if apiResp, ok := target.(*TwitterResponse); ok {
+				if apiResp.Code != 0 {
+					return fmt.Errorf("API error: code=%d, reason=%s, message=%s",
+						apiResp.Code, apiResp.Reason, apiResp.Message)
+				}
+			}
+
+			if apiResp, ok := target.(*WalletsResponse); ok {
+				if apiResp.Code != 0 {
+					return fmt.Errorf("API error: code=%d, reason=%s, message=%s",
+						apiResp.Code, apiResp.Reason, apiResp.Message)
+				}
+			}
+
+			return nil
+		}
+
+		log.Printf("Browser fetch failed: %v. Falling back to HTTP client...", err)
+	}
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("error creating request: %w", err)
@@ -158,7 +203,7 @@ func (s *GMGNScraper) makeRequestWithRetry(url string, target interface{}, retry
 	// Handle compressed response
 	var reader io.Reader = resp.Body
 	encoding := resp.Header.Get("Content-Encoding")
-	
+
 	switch encoding {
 	case "br":
 		reader = brotli.NewReader(resp.Body)
@@ -177,29 +222,27 @@ func (s *GMGNScraper) makeRequestWithRetry(url string, target interface{}, retry
 		return fmt.Errorf("error reading response: %w", err)
 	}
 
+	// Check for authentication error or Cloudflare challenge and try to refresh token/cookies
+	if resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 503 {
+		log.Printf("Authentication/Cloudflare challenge failed (attempt %d/%d) - Status: %d", retryCount+1, maxRetries, resp.StatusCode)
 
-
-	// Check for authentication error and try to refresh token
-	if resp.StatusCode == 401 {
-		log.Printf("Authentication failed (attempt %d/%d) - Response: %s", retryCount+1, maxRetries, string(body))
-		
 		// Only try to refresh on first attempt to avoid infinite loop
 		if retryCount == 0 {
-			// Force token refresh on 401
-			log.Println("Forcing token refresh due to 401 error...")
+			// Force token/cookie refresh
+			log.Println("Forcing token/cookie refresh due to error...")
 			s.authManager.lastRefresh = time.Time{} // Reset to force refresh
-			
-			// Try to refresh token
+
+			// Try to refresh token and cookies
 			if err := s.authManager.RefreshTokenIfNeeded(); err != nil {
-				return fmt.Errorf("failed to refresh token: %w", err)
+				return fmt.Errorf("failed to refresh token/cookies: %w", err)
 			}
-			
-			// Retry the request with new token and increment retry count
-			log.Printf("Retrying request with refreshed token (attempt %d/%d)...", retryCount+1, maxRetries)
+
+			// Retry the request with new token/cookies and increment retry count
+			log.Printf("Retrying request with refreshed token/cookies (attempt %d/%d)...", retryCount+1, maxRetries)
 			return s.makeRequestWithRetry(url, target, retryCount+1)
 		} else {
 			// Don't retry refresh on subsequent attempts
-			return fmt.Errorf("authentication failed after token refresh attempt")
+			return fmt.Errorf("request failed after refresh attempt: status %d", resp.StatusCode)
 		}
 	}
 

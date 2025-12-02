@@ -141,55 +141,71 @@ GMGN_PASSWORD=your_password_here
 3. Visit: `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates`
 4. Find your chat ID in the response
 
-## Usage
+## 🚀 Cara Menjalankan (Usage)
 
-### Method 1: Traditional Twitter Monitoring (Simple)
+Karena bot ini berjalan di VPS dan perlu melewati proteksi Cloudflare, Anda **WAJIB** menggunakan mode browser.
 
-```bash
-# Monitor Twitter with Telegram notifications every 10 seconds
-go run . -api=twitter -telegram -refresh
-```
+### 1. Build Program
 
-### Method 2: Advanced Monitoring with Token Management
+Pertama, compile kode program menjadi file binary:
 
 ```bash
-# Start robust monitoring with automatic token rotation
-go run . -monitor
+go build -o bot .
 ```
 
-### Method 3: One-time Data Fetch
+### 2. Jalankan Bot (Mode Rekomendasi)
+
+Jalankan perintah berikut untuk memulai bot dengan fitur anti-blokir Cloudflare:
 
 ```bash
-# Fetch Twitter data once
-go run . -api=twitter
-
-# Fetch wallet data once
-go run . -api=wallets
-
-# Send to Telegram
-go run . -api=twitter -telegram
+./bot -api=twitter -telegram -refresh -browser
 ```
 
-## First Time Setup (Authentication)
+**Penjelasan Command:**
 
-When you run the bot for the first time, it will prompt for Telegram login:
+- `-api=twitter`: Mengambil data sinyal Twitter/X dari GMGN.ai.
+- `-telegram`: Mengirimkan notifikasi ke Telegram.
+- `-refresh`: Menjalankan bot terus-menerus (auto-refresh setiap 5 detik).
+- `-browser`: **PENTING!** Menggunakan browser asli (Chrome/Chromium) untuk mengambil data agar tidak diblokir Cloudflare (Error 403).
 
-### Option 1: Automated Browser Login (Recommended for VPS)
+### 3. Login Pertama Kali
 
-1. Run the bot: `go run . -monitor`
-2. When prompted, type: `auto`
-3. The system will open Thorium browser automatically
-4. Click the Telegram bot link that appears
-5. Complete the Telegram login process
-6. The system will automatically extract the token
+Saat pertama kali dijalankan, bot akan membuka browser di background.
 
-### Option 2: Manual Login
+1.  Bot akan meminta Anda login ke Telegram via link yang muncul di terminal.
+2.  Ikuti instruksi di terminal (bisa login manual atau otomatis).
+3.  Setelah login berhasil, bot akan menyimpan sesi (token & cookies) secara otomatis.
+4.  Selanjutnya bot akan berjalan sendiri tanpa perlu login lagi.
 
-1. Run the bot: `go run . -monitor`
-2. Click the Telegram bot link manually in your browser
-3. Complete the login process
-4. Copy the response URL (format: `https://gmgn.ai/tglogin?user_id=...`)
-5. Paste it when prompted
+### Opsi Lain (Wallet Tracking)
+
+Jika ingin melacak pergerakan Wallet (Smart Money), gunakan:
+
+```bash
+./bot -api=wallets -telegram -refresh -browser
+```
+
+## 🛠️ Troubleshooting
+
+### Error: "Authentication/Cloudflare challenge failed (Status: 403)"
+
+Ini artinya IP VPS Anda dicurigai oleh Cloudflare.
+**Solusi:** Pastikan Anda menggunakan flag `-browser` saat menjalankan bot. Fitur ini akan memanipulasi request agar terlihat 100% seperti pengguna manusia.
+
+### Error: "Too Many Requests: retry after XX"
+
+Ini adalah batasan dari Telegram karena bot mengirim pesan terlalu cepat (spam).
+**Solusi:** Biarkan saja, bot akan otomatis mencoba mengirim ulang (retry) setelah waktu tunggu selesai.
+
+### Browser Error / Chrome Not Found
+
+Pastikan VPS Anda sudah terinstall Chromium atau Google Chrome.
+
+```bash
+# Untuk Ubuntu/Debian
+sudo apt update
+sudo apt install chromium-browser
+```
 
 ## VPS-Specific Instructions
 
