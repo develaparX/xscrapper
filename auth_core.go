@@ -117,11 +117,29 @@ func (am *AuthManager) StartPersistentBrowser() error {
 
 	// Create Chrome context with options
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.ExecPath(browserPath),   // Use detected browser
-		chromedp.Flag("headless", false), // Keep browser visible
-		chromedp.Flag("disable-gpu", false),
-		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.ExecPath(browserPath), // Use detected browser
+
+		// Resource Optimization Flags (Opsi 2)
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("disable-software-rasterizer", true),
+		chromedp.Flag("disable-extensions", true),
+		chromedp.Flag("disable-background-networking", true),
+		chromedp.Flag("disable-background-timer-throttling", true),
+		chromedp.Flag("disable-backgrounding-occluded-windows", true),
+		chromedp.Flag("disable-breakpad", true),
+		chromedp.Flag("disable-component-update", true),
+		chromedp.Flag("disable-domain-reliability", true),
+		chromedp.Flag("disable-sync", true),
+		chromedp.Flag("blink-settings", "imagesEnabled=false"), // Disable images
+		chromedp.Flag("mute-audio", true),
+
+		// Headless Mode (Opsi 3 - Try headless=new if supported, otherwise standard headless)
+		// Note: We use standard headless=true for now as it's more compatible with older Thorium versions
+		// If detection issues arise, we might need to switch back to false or use "new"
+		chromedp.Flag("headless", false),
+
 		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.UserDataDir("./browser-data"), // Persistent user data
 		chromedp.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"),
 	)
