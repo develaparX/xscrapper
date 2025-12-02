@@ -160,7 +160,35 @@ func (am *AuthManager) StartPersistentBrowser() error {
 
 	am.browserReady = true
 	log.Println("Persistent browser session started successfully")
+
+	// Start auto-restart routine if not already running
+	go am.startBrowserAutoRestart()
+
 	return nil
+}
+
+// startBrowserAutoRestart restarts the browser periodically to free up memory
+func (am *AuthManager) startBrowserAutoRestart() {
+	// Restart every 12 hours
+	ticker := time.NewTicker(12 * time.Hour)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		log.Println("⏰ Scheduled browser restart (12h) to free up memory...")
+
+		// Stop current browser
+		am.StopPersistentBrowser()
+
+		// Wait a bit
+		time.Sleep(5 * time.Second)
+
+		// Start new browser
+		if err := am.StartPersistentBrowser(); err != nil {
+			log.Printf("❌ Failed to auto-restart browser: %v", err)
+		} else {
+			log.Println("✅ Browser auto-restarted successfully")
+		}
+	}
 }
 
 // StopPersistentBrowser stops the persistent browser session
