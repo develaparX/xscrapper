@@ -162,7 +162,7 @@ func (am *AuthManager) StartPersistentBrowser() error {
 	log.Println("Persistent browser session started successfully")
 
 	// Start auto-restart routine if not already running
-	go am.startBrowserAutoRestart()
+	// go am.startBrowserAutoRestart()
 
 	return nil
 }
