@@ -166,6 +166,101 @@ func (tb *TelegramBot) SendTwitterMessages(response *TwitterResponse) error {
 	return nil
 }
 
+// SendWalletData sends only new wallet data to Telegram
+func (tb *TelegramBot) SendWalletData(response *WalletsResponse) error {
+	if len(response.Data.List) == 0 {
+		return nil // Don't send "no wallets" notification for realtime
+	}
+
+	newWalletsCount := 0
+
+	// Send only new wallets (not sent before)
+	for _, wallet := range response.Data.List {
+		// Check if we've already sent this wallet
+		if tb.sentWallets[wallet.WalletAddress] {
+			continue
+		}
+
+		// Mark as sent
+		tb.sentWallets[wallet.WalletAddress] = true
+		newWalletsCount++
+
+		messageText := tb.formatWallet(&wallet)
+		if err := tb.SendMessage(messageText); err != nil {
+			log.Printf("Failed to send wallet %s: %v", wallet.WalletAddress, err)
+		}
+
+		// Small delay to avoid rate limiting
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	if newWalletsCount > 0 {
+		log.Printf("Sent %d new wallets to Telegram", newWalletsCount)
+	}
+
+	return nil
+}
+
+// SendMessage sends a text message to Telegram
+func (tb *TelegramBot) SendMessage(text string) error {
+	return tb.SendMessageWithMarkup(text, nil)
+}
+
+// SendMessageWithMarkup sends a text message with inline keyboard markup
+func (tb *TelegramBot) SendMessageWithMarkup(text string, markup interface{}) error {
+	msg := tgbotapi.NewMessage(tb.chatID, text)
+	msg.ParseMode = "HTML" // Use HTML for formatting
+	msg.DisableWebPagePreview = true
+	
+	if markup != nil {
+		msg.ReplyMarkup = markup
+	}
+
+	_, err := tb.bot.Send(msg)
+	if err != nil {
+		return fmt.Errorf("failed to send telegram message: %w", err)
+	}
+
+	return nil
+}
+
+// SendMediaGroup sends multiple photos as a media group with caption
+func (tb *TelegramBot) SendMediaGroup(mediaURLs []string, caption string) error {
+	if len(mediaURLs) == 0 {
+		return nil
+	}
+
+	var mediaGroup []interface{}
+	
+	for i, url := range mediaURLs {
+		// Check if URL is accessible
+		resp, err := http.Head(url)
+		if err != nil || resp.StatusCode != 200 {
+			log.Printf("Media URL not accessible: %s", url)
+			continue
+		}
+
+		media := tgbotapi.NewInputMediaPhoto(tgbotapi.FileURL(url))
+		// Add caption only to the first media item
+		if i == 0 {
+			media.Caption = caption
+		}
+		mediaGroup = append(mediaGroup, media)
+	}
+
+	if len(mediaGroup) == 0 {
+		return fmt.Errorf("no accessible media URLs")
+	}
+
+	mediaGroupConfig := tgbotapi.NewMediaGroup(tb.chatID, mediaGroup)
+	_, err := tb.bot.SendMediaGroup(mediaGroupConfig)
+	if err != nil {
+		return fmt.Errorf("failed to send media group: %w", err)
+	}
+
+	return nil
+}
+
 // SendPhotoWithMarkup sends a photo with HTML caption and inline buttons
 func (tb *TelegramBot) SendPhotoWithMarkup(photoURL, caption string, markup interface{}) error {
 	// Check URL availability first
@@ -313,7 +408,7 @@ func (tb *TelegramBot) formatTwitterMessageHTML(msg *TwitterMessage) (string, in
 		if msg.Action != nil && msg.Action.Follow != nil && msg.Action.Follow.Following != nil {
 			target := msg.Action.Follow.Following
 			targetUrl := fmt.Sprintf("https://x.com/%s", target.ScreenName)
-			rows = append(rows, tgbotapi.NewInlineKeyboardButtonRow(
+			rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonURL(fmt.Sprintf("View %s", target.Name), targetUrl),
 			))
 		}
