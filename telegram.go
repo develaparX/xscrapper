@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -122,34 +121,65 @@ func (tb *TelegramBot) SendTwitterMessages(response *TwitterResponse) error {
 
 		messageText, markup := tb.formatTwitterMessageHTML(&msg)
 		
-		// Check if tweet has media (images)
+		// Check if tweet has media (images OR videos)
 		if len(msg.Content.Media) > 0 {
 			var mediaURLs []string
+			var hasVideo bool
+			
 			for _, media := range msg.Content.Media {
-				if media.Type == "image" && media.URL != "" {
-					mediaURLs = append(mediaURLs, media.URL)
+				if media.URL != "" {
+					if media.Type == "image" {
+						mediaURLs = append(mediaURLs, media.URL)
+					} else if media.Type == "video" {
+						mediaURLs = append(mediaURLs, media.URL)
+						hasVideo = true
+					}
 				}
 			}
 			
 			if len(mediaURLs) > 0 {
-				if len(mediaURLs) == 1 {
-					// Single image - SendPhoto doesn't support inline markup easily in all libs unless separate msg
-					// But tgbotapi PhotoConfig has ReplyMarkup
+				if len(mediaURLs) == 1 && !hasVideo {
+					// Single image 
 					if err := tb.SendPhotoWithMarkup(mediaURLs[0], messageText, markup); err != nil {
 						log.Printf("Failed to send photo: %v, falling back to text", err)
 						tb.SendMessageWithMarkup(messageText, markup) // Fallback
 					}
 				} else {
-					// Multiple images (MediaGroup) - MediaGroup doesn't support buttons directly on the album
-					// So we send media group then text with buttons
-					if err := tb.SendMediaGroup(mediaURLs, ""); err != nil { // No caption on media group to avoid duplications
-						log.Printf("Failed to send media group: %v", err)
+					// Multiple images or contains video -> Send as MediaGroup
+					// Note: MediaGroup caption only works on first item and doesn't support inline buttons on the album itself easily
+					// Strategy: Send MediaGroup first, then send the detailed text with buttons as a separate message
+					
+					// Better approach for Mixed/Video:
+					// Re-iterate msg.Content.Media to build proper InputMedia
+					var inputMedia []interface{}
+					for _, m := range msg.Content.Media {
+						if m.URL == "" { continue }
+						
+						if m.Type == "video" {
+							vid := tgbotapi.NewInputMediaVideo(tgbotapi.FileURL(m.URL))
+							inputMedia = append(inputMedia, vid)
+						} else if m.Type == "image" {
+							photo := tgbotapi.NewInputMediaPhoto(tgbotapi.FileURL(m.URL))
+							inputMedia = append(inputMedia, photo)
+						}
 					}
-					// Send text with buttons separately
+					
+					if len(inputMedia) > 0 {
+						mediaGroupConfig := tgbotapi.NewMediaGroup(tb.chatID, inputMedia)
+						if _, err := tb.bot.SendMediaGroup(mediaGroupConfig); err != nil {
+							log.Printf("Failed to send media group: %v", err)
+							// If video fails (common with URLs), try sending link in text
+							if hasVideo {
+								messageText += "\n\n⚠️ <i>(Video media attached, view on X)</i>"
+							}
+						}
+					}
+					
+					// Always send the formatted text with buttons separately for Albums/Videos
 					tb.SendMessageWithMarkup(messageText, markup)
 				}
 			} else {
-				// No valid image URLs
+				// No valid media URLs
 				tb.SendMessageWithMarkup(messageText, markup)
 			}
 		} else {
@@ -233,12 +263,9 @@ func (tb *TelegramBot) SendMediaGroup(mediaURLs []string, caption string) error 
 	var mediaGroup []interface{}
 	
 	for i, url := range mediaURLs {
-		// Check if URL is accessible
-		resp, err := http.Head(url)
-		if err != nil || resp.StatusCode != 200 {
-			log.Printf("Media URL not accessible: %s", url)
-			continue
-		}
+		// Only check HEAD for images/videos if strictly necessary, but often causes issues with some CDNs
+		// Skipping strict check to let Telegram handle the fetch
+		// if !hasVideo { ... }
 
 		media := tgbotapi.NewInputMediaPhoto(tgbotapi.FileURL(url))
 		// Add caption only to the first media item
@@ -263,11 +290,13 @@ func (tb *TelegramBot) SendMediaGroup(mediaURLs []string, caption string) error 
 
 // SendPhotoWithMarkup sends a photo with HTML caption and inline buttons
 func (tb *TelegramBot) SendPhotoWithMarkup(photoURL, caption string, markup interface{}) error {
-	// Check URL availability first
+	// Skip strict URL check to avoid false negatives with some CDNs
+	/*
 	resp, err := http.Head(photoURL)
 	if err != nil || resp.StatusCode != 200 {
 		return fmt.Errorf("photo URL not accessible")
 	}
+	*/
 
 	photo := tgbotapi.NewPhoto(tb.chatID, tgbotapi.FileURL(photoURL))
 	photo.Caption = caption
@@ -276,7 +305,7 @@ func (tb *TelegramBot) SendPhotoWithMarkup(photoURL, caption string, markup inte
 		photo.ReplyMarkup = markup
 	}
 
-	_, err = tb.bot.Send(photo)
+	_, err := tb.bot.Send(photo)
 	return err
 }
 
@@ -340,7 +369,7 @@ func (tb *TelegramBot) formatTwitterMessageHTML(msg *TwitterMessage) (string, in
 	case "delete_post":
 		builder.WriteString("<b>Deleted Content:</b>\n")
 		if msg.Content.Text != "" {
-			builder.WriteString(fmt.Sprintf("<i>%s</i>", esc(msg.Content.Text)))
+			builder.WriteString(fmt.Sprintf("<s>%s</s>", esc(msg.Content.Text)))
 		} else {
 			builder.WriteString("<i>(Content unavailable)</i>")
 		}
@@ -383,7 +412,7 @@ func (tb *TelegramBot) formatTwitterMessageHTML(msg *TwitterMessage) (string, in
 			if len(text) > 50 { 
 				text = text[:50] + "..." 
 			}
-			builder.WriteString(fmt.Sprintf("\n<i>\"%s\"</i>", text))
+			builder.WriteString(fmt.Sprintf("\n<blockquote>\"%s\"</blockquote>", text))
 		}
 	}
 
