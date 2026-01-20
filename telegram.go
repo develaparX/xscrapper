@@ -321,6 +321,7 @@ func (tb *TelegramBot) formatTwitterMessageHTML(msg *TwitterMessage) (string, in
 	
 	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
 	return builder.String(), markup
+}
 
 // formatWallet formats wallet data for Telegram
 func (tb *TelegramBot) formatWallet(wallet *Wallet) string {
