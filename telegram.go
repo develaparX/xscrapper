@@ -120,50 +120,41 @@ func (tb *TelegramBot) SendTwitterMessages(response *TwitterResponse) error {
 		// Mark as sent
 		tb.sentTweets[msg.ID] = true
 
-		messageText := tb.formatTwitterMessage(&msg)
+		messageText, markup := tb.formatTwitterMessageHTML(&msg)
 		
 		// Check if tweet has media (images)
 		if len(msg.Content.Media) > 0 {
 			var mediaURLs []string
 			for _, media := range msg.Content.Media {
-				// Only process images, skip thumbnails and videos for now
 				if media.Type == "image" && media.URL != "" {
 					mediaURLs = append(mediaURLs, media.URL)
 				}
 			}
 			
 			if len(mediaURLs) > 0 {
-				// Send media with caption
 				if len(mediaURLs) == 1 {
-					// Single image
-					if err := tb.SendPhoto(mediaURLs[0], messageText); err != nil {
-						log.Printf("Failed to send photo for message %s: %v", msg.ID, err)
-						// Fallback to text message
-						if err := tb.SendMessage(messageText); err != nil {
-							log.Printf("Failed to send fallback message %s: %v", msg.ID, err)
-						}
+					// Single image - SendPhoto doesn't support inline markup easily in all libs unless separate msg
+					// But tgbotapi PhotoConfig has ReplyMarkup
+					if err := tb.SendPhotoWithMarkup(mediaURLs[0], messageText, markup); err != nil {
+						log.Printf("Failed to send photo: %v, falling back to text", err)
+						tb.SendMessageWithMarkup(messageText, markup) // Fallback
 					}
 				} else {
-					// Multiple images
-					if err := tb.SendMediaGroup(mediaURLs, messageText); err != nil {
-						log.Printf("Failed to send media group for message %s: %v", msg.ID, err)
-						// Fallback to text message
-						if err := tb.SendMessage(messageText); err != nil {
-							log.Printf("Failed to send fallback message %s: %v", msg.ID, err)
-						}
+					// Multiple images (MediaGroup) - MediaGroup doesn't support buttons directly on the album
+					// So we send media group then text with buttons
+					if err := tb.SendMediaGroup(mediaURLs, ""); err != nil { // No caption on media group to avoid duplications
+						log.Printf("Failed to send media group: %v", err)
 					}
+					// Send text with buttons separately
+					tb.SendMessageWithMarkup(messageText, markup)
 				}
 			} else {
-				// No valid media URLs, send text only
-				if err := tb.SendMessage(messageText); err != nil {
-					log.Printf("Failed to send message %s: %v", msg.ID, err)
-				}
+				// No valid image URLs
+				tb.SendMessageWithMarkup(messageText, markup)
 			}
 		} else {
-			// No media, send text only
-			if err := tb.SendMessage(messageText); err != nil {
-				log.Printf("Failed to send message %s: %v", msg.ID, err)
-			}
+			// No media
+			tb.SendMessageWithMarkup(messageText, markup)
 		}
 
 		// Small delay to avoid rate limiting
@@ -175,359 +166,161 @@ func (tb *TelegramBot) SendTwitterMessages(response *TwitterResponse) error {
 	return nil
 }
 
-// SendWalletData sends only new wallet data to Telegram
-func (tb *TelegramBot) SendWalletData(response *WalletsResponse) error {
-	if len(response.Data.List) == 0 {
-		return nil // Don't send "no wallets" notification for realtime
-	}
-
-	newWalletsCount := 0
-
-	// Send only new wallets (not sent before)
-	for _, wallet := range response.Data.List {
-		// Check if we've already sent this wallet
-		if tb.sentWallets[wallet.WalletAddress] {
-			continue
-		}
-
-		// Mark as sent
-		tb.sentWallets[wallet.WalletAddress] = true
-		newWalletsCount++
-
-		messageText := tb.formatWallet(&wallet)
-		if err := tb.SendMessage(messageText); err != nil {
-			log.Printf("Failed to send wallet %s: %v", wallet.WalletAddress, err)
-		}
-
-		// Small delay to avoid rate limiting
-		time.Sleep(200 * time.Millisecond)
-	}
-
-	if newWalletsCount > 0 {
-		log.Printf("Sent %d new wallets to Telegram", newWalletsCount)
-	}
-
-	return nil
-}
-
-// SendMessage sends a text message to Telegram
-func (tb *TelegramBot) SendMessage(text string) error {
-	msg := tgbotapi.NewMessage(tb.chatID, text)
-	// Remove markdown parsing to avoid issues
-	msg.DisableWebPagePreview = true
-
-	_, err := tb.bot.Send(msg)
-	if err != nil {
-		return fmt.Errorf("failed to send telegram message: %w", err)
-	}
-
-	return nil
-}
-
-// SendPhoto sends a photo to Telegram with caption
-func (tb *TelegramBot) SendPhoto(photoURL, caption string) error {
-	// Check if URL is accessible
+// SendPhotoWithMarkup sends a photo with HTML caption and inline buttons
+func (tb *TelegramBot) SendPhotoWithMarkup(photoURL, caption string, markup interface{}) error {
+	// Check URL availability first
 	resp, err := http.Head(photoURL)
 	if err != nil || resp.StatusCode != 200 {
-		log.Printf("Photo URL not accessible: %s", photoURL)
-		return fmt.Errorf("photo URL not accessible: %s", photoURL)
+		return fmt.Errorf("photo URL not accessible")
 	}
 
 	photo := tgbotapi.NewPhoto(tb.chatID, tgbotapi.FileURL(photoURL))
 	photo.Caption = caption
+	photo.ParseMode = "HTML"
+	if markup != nil {
+		photo.ReplyMarkup = markup
+	}
 
 	_, err = tb.bot.Send(photo)
-	if err != nil {
-		return fmt.Errorf("failed to send photo: %w", err)
-	}
-
-	return nil
+	return err
 }
 
-// SendMediaGroup sends multiple photos as a media group with caption
-func (tb *TelegramBot) SendMediaGroup(mediaURLs []string, caption string) error {
-	if len(mediaURLs) == 0 {
-		return nil
-	}
-
-	var mediaGroup []interface{}
-	
-	for i, url := range mediaURLs {
-		// Check if URL is accessible
-		resp, err := http.Head(url)
-		if err != nil || resp.StatusCode != 200 {
-			log.Printf("Media URL not accessible: %s", url)
-			continue
-		}
-
-		media := tgbotapi.NewInputMediaPhoto(tgbotapi.FileURL(url))
-		// Add caption only to the first media item
-		if i == 0 {
-			media.Caption = caption
-		}
-		mediaGroup = append(mediaGroup, media)
-	}
-
-	if len(mediaGroup) == 0 {
-		return fmt.Errorf("no accessible media URLs")
-	}
-
-	mediaGroupConfig := tgbotapi.NewMediaGroup(tb.chatID, mediaGroup)
-	_, err := tb.bot.SendMediaGroup(mediaGroupConfig)
-	if err != nil {
-		return fmt.Errorf("failed to send media group: %w", err)
-	}
-
-	return nil
-}
-
-// formatTwitterMessage formats a Twitter message for Telegram
-func (tb *TelegramBot) formatTwitterMessage(msg *TwitterMessage) string {
+// formatTwitterMessageHTML formats message with HTML and returns inline keyboard markup
+func (tb *TelegramBot) formatTwitterMessageHTML(msg *TwitterMessage) (string, interface{}) {
 	var builder strings.Builder
 
-	// Header with user info
-	builder.WriteString("🐦 X Message\n\n")
-	builder.WriteString(fmt.Sprintf("👤 %s (@%s)\n", 
-		msg.User.Name, 
-		msg.User.ScreenName))
-
-	if msg.User.Followers > 0 {
-		builder.WriteString(fmt.Sprintf("👥 Followers: %s\n", formatNumber(msg.User.Followers)))
+	// Escape HTML special chars function
+	esc := func(s string) string {
+		return strings.NewReplacer("<", "&lt;", ">", "&gt;", "&", "&amp;").Replace(s)
 	}
 
-	// User tags
-	if len(msg.UserTags) > 0 {
-		builder.WriteString(fmt.Sprintf("🏷️ Tags: %s\n", strings.Join(msg.UserTags, ", ")))
-	}
+	// 1. Header: User Info
+	// 🐦 User Name (@handle)
+	builder.WriteString(fmt.Sprintf("<b>%s</b> (<a href=\"https://x.com/%s\">@%s</a>)\n", 
+		esc(msg.User.Name), 
+		msg.User.ScreenName, 
+		esc(msg.User.ScreenName)))
 
-	// Tweet type and timestamp
+	// Tweet Type & Time
 	timestamp, _ := strconv.ParseInt(msg.Timestamp, 10, 64)
-	timeStr := time.Unix(timestamp/1000, 0).Format("2006-01-02 15:04:05")
-	builder.WriteString(fmt.Sprintf("📅 %s | 📝 %s\n\n", timeStr, msg.TweetType))
+	timeStr := time.Unix(timestamp/1000, 0).Format("15:04:05")
+	
+	typeIcon := "📝"
+	typeLabel := strings.ToUpper(msg.TweetType)
+	switch msg.TweetType {
+	case "tweet": typeIcon = "🐦"; typeLabel = "NEW TWEET"
+	case "reply": typeIcon = "↩️"; typeLabel = "REPLY"
+	case "repost": typeIcon = "🔄"; typeLabel = "REPOST"
+	case "quote": typeIcon = "💬"; typeLabel = "QUOTE"
+	case "delete_post": typeIcon = "🗑️"; typeLabel = "DELETED"
+	case "pin": typeIcon = "📌"; typeLabel = "PINNED"
+	case "unpin": typeIcon = "📍"; typeLabel = "UNPINNED"
+	case "follow": typeIcon = "👥"; typeLabel = "FOLLOWED"
+	case "unfollow": typeIcon = "🚫"; typeLabel = "UNFOLLOWED"
+	case "description": typeIcon = "📝"; typeLabel = "BIO UPDATE"
+	case "name": typeIcon = "✏️"; typeLabel = "NAME UPDATE"
+	case "handle": typeIcon = "🔄"; typeLabel = "HANDLE UPDATE"
+	}
+	
+	builder.WriteString(fmt.Sprintf("%s <code>%s</code> | 🕒 %s\n\n", typeIcon, typeLabel, timeStr))
 
-	// Handle different tweet types
-	if msg.TweetType == "follow" && msg.Action != nil && msg.Action.Follow != nil {
-		// Follow action
-		builder.WriteString("👥 Follow Action:\n")
-		followAction := msg.Action.Follow
-		
-		if followAction.Following != nil {
-			builder.WriteString(fmt.Sprintf("➡️ Started following: %s (@%s)\n", 
-				followAction.Following.Name, 
-				followAction.Following.ScreenName))
-			
-			if followAction.Following.Followers > 0 {
-				builder.WriteString(fmt.Sprintf("👥 Target Followers: %s\n", formatNumber(followAction.Following.Followers)))
+	// 2. Content based on Type
+	switch msg.TweetType {
+	case "follow":
+		if msg.Action != nil && msg.Action.Follow != nil && msg.Action.Follow.Following != nil {
+			f := msg.Action.Follow.Following
+			builder.WriteString(fmt.Sprintf("<b>Started following:</b>\n👤 <b>%s</b> (@%s)\n", esc(f.Name), esc(f.ScreenName)))
+			if f.Followers > 0 {
+				builder.WriteString(fmt.Sprintf("👥 Followers: <code>%s</code>\n", formatNumber(f.Followers)))
 			}
-			
-			if followAction.Following.KeyFollowers > 0 {
-				builder.WriteString(fmt.Sprintf("⭐ Key Followers: %s\n", formatNumber(followAction.Following.KeyFollowers)))
-			}
-			
-			if followAction.Following.Description != "" {
-				builder.WriteString(fmt.Sprintf("📝 Bio: %s\n", followAction.Following.Description))
-			}
-			
-			if followAction.Following.JoinedAt > 0 {
-				joinedTime := time.Unix(followAction.Following.JoinedAt/1000, 0)
-				builder.WriteString(fmt.Sprintf("📅 Joined: %s\n", joinedTime.Format("Jan 2006")))
+			if f.Description != "" {
+				builder.WriteString(fmt.Sprintf("📝 <i>%s</i>\n", esc(f.Description)))
 			}
 		}
-	} else if msg.TweetType == "handle" && msg.Profile != nil {
-		// Handle change action
-		builder.WriteString("🔄 Handle Change:\n")
-		
-		if msg.Profile.BeforeHandle != "" && msg.Profile.AfterHandle != "" {
-			builder.WriteString(fmt.Sprintf("📝 Changed handle from: @%s\n", msg.Profile.BeforeHandle))
-			builder.WriteString(fmt.Sprintf("➡️ Changed handle to: @%s\n", msg.Profile.AfterHandle))
-			
-			// Show current user info
-			builder.WriteString(fmt.Sprintf("\n👤 Current Profile: %s (@%s)\n", 
-				msg.User.Name, 
-				msg.User.ScreenName))
+	case "unfollow":
+		if msg.Action != nil && msg.Action.Follow != nil && msg.Action.Follow.Following != nil {
+			f := msg.Action.Follow.Following
+			builder.WriteString(fmt.Sprintf("<b>Stopped following:</b>\n👤 <b>%s</b> (@%s)\n", esc(f.Name), esc(f.ScreenName)))
 		}
-	} else if msg.TweetType == "name" && msg.Profile != nil {
-		// Name change action
-		builder.WriteString("✏️ Display Name Change:\n")
-		
-		if msg.Profile.BeforeName != "" && msg.Profile.AfterName != "" {
-			builder.WriteString(fmt.Sprintf("📝 Changed name from: %s\n", msg.Profile.BeforeName))
-			builder.WriteString(fmt.Sprintf("➡️ Changed name to: %s\n", msg.Profile.AfterName))
-			
-			// Show current user info
-			builder.WriteString(fmt.Sprintf("\n👤 Current Profile: %s (@%s)\n", 
-				msg.User.Name, 
-				msg.User.ScreenName))
-		}
-	} else if msg.TweetType == "unfollow" && msg.Action != nil && msg.Action.Follow != nil {
-		// Unfollow action
-		builder.WriteString("🚫 Unfollow Action:\n")
-		followAction := msg.Action.Follow
-		
-		if followAction.Following != nil {
-			builder.WriteString(fmt.Sprintf("⬅️ Stopped following: %s (@%s)\n", 
-				followAction.Following.Name, 
-				followAction.Following.ScreenName))
-			
-			if followAction.Following.Followers > 0 {
-				builder.WriteString(fmt.Sprintf("👥 Target Followers: %s\n", formatNumber(followAction.Following.Followers)))
-			}
-		}
-	} else if msg.TweetType == "delete_post" {
-		builder.WriteString("🗑️ Deleted Tweet:\n")
+	case "delete_post":
+		builder.WriteString("<b>Deleted Content:</b>\n")
 		if msg.Content.Text != "" {
-			builder.WriteString(msg.Content.Text)
+			builder.WriteString(fmt.Sprintf("<i>%s</i>", esc(msg.Content.Text)))
 		} else {
-			builder.WriteString("(No content available)")
+			builder.WriteString("<i>(Content unavailable)</i>")
 		}
-	} else if msg.TweetType == "pin" {
-		builder.WriteString("📌 Pinned Tweet:\n")
-		builder.WriteString(msg.Content.Text)
-	} else if msg.TweetType == "unpin" {
-		builder.WriteString("📍 Unpinned Tweet:\n")
-		builder.WriteString(msg.Content.Text)
-	} else if msg.TweetType == "description" && msg.Profile != nil {
-		// Bio/Description change action
-		builder.WriteString("📝 Bio Update:\n")
-		
-		// Handle both cases: before/after description or just current description
-		if msg.Profile.BeforeDescription != "" && msg.Profile.AfterDescription != "" {
-			builder.WriteString(fmt.Sprintf("📝 Changed bio from: %s\n", msg.Profile.BeforeDescription))
-			builder.WriteString(fmt.Sprintf("➡️ Changed bio to: %s\n", msg.Profile.AfterDescription))
-		} else if msg.Profile.Description != "" {
-			builder.WriteString(fmt.Sprintf("📝 New bio: %s\n", msg.Profile.Description))
-		}
-		
-		// Show current user info
-		builder.WriteString(fmt.Sprintf("\n👤 Current Profile: %s (@%s)\n", 
-			msg.User.Name, 
-			msg.User.ScreenName))
-	} else {
-		// Regular content
-		builder.WriteString("💬 Content:\n")
-		builder.WriteString(msg.Content.Text)
-	}
-
-	// Media info
-	if len(msg.Content.Media) > 0 {
-		var mediaTypes []string
-		imageCount := 0
-		videoCount := 0
-		
-		for _, media := range msg.Content.Media {
-			switch media.Type {
-			case "image":
-				imageCount++
-			case "video":
-				videoCount++
-			case "thumbnail":
-				// Skip thumbnails in count, they're usually paired with videos
-				continue
-			}
-		}
-		
-		if imageCount > 0 {
-			if imageCount == 1 {
-				mediaTypes = append(mediaTypes, "📸 1 Image")
+	case "description":
+		if msg.Profile != nil {
+			if msg.Profile.BeforeDescription != "" {
+				builder.WriteString(fmt.Sprintf("❌ <b>Old:</b> %s\n", esc(msg.Profile.BeforeDescription)))
+				builder.WriteString(fmt.Sprintf("✅ <b>New:</b> %s\n", esc(msg.Profile.AfterDescription)))
 			} else {
-				mediaTypes = append(mediaTypes, fmt.Sprintf("📸 %d Images", imageCount))
+				builder.WriteString(fmt.Sprintf("✅ <b>New Bio:</b> %s\n", esc(msg.Profile.Description)))
 			}
 		}
-		
-		if videoCount > 0 {
-			if videoCount == 1 {
-				mediaTypes = append(mediaTypes, "🎥 1 Video")
-			} else {
-				mediaTypes = append(mediaTypes, fmt.Sprintf("🎥 %d Videos", videoCount))
-			}
+	case "name":
+		if msg.Profile != nil {
+			builder.WriteString(fmt.Sprintf("❌ <b>Old:</b> %s\n", esc(msg.Profile.BeforeName)))
+			builder.WriteString(fmt.Sprintf("✅ <b>New:</b> %s\n", esc(msg.Profile.AfterName)))
 		}
-		
-		if len(mediaTypes) > 0 {
-			builder.WriteString(fmt.Sprintf("\n\n📎 Media: %s", strings.Join(mediaTypes, ", ")))
+	case "handle":
+		if msg.Profile != nil {
+			builder.WriteString(fmt.Sprintf("❌ <b>Old:</b> @%s\n", esc(msg.Profile.BeforeHandle)))
+			builder.WriteString(fmt.Sprintf("✅ <b>New:</b> @%s\n", esc(msg.Profile.AfterHandle)))
+		}
+	default: // tweet, reply, repost, quote, pin, unpin
+		if msg.Content.Text != "" {
+			builder.WriteString(esc(msg.Content.Text))
 		}
 	}
 
-	// Twitter/X link
-	if msg.TweetID != "" {
-		builder.WriteString(fmt.Sprintf("\n\n🔗 View on X: https://x.com/%s/status/%s", 
-			msg.User.ScreenName, 
-			msg.TweetID))
+	// 3. User Tags
+	if len(msg.UserTags) > 0 {
+		builder.WriteString(fmt.Sprintf("\n\n🏷️ <i>#%s</i>", strings.Join(msg.UserTags, " #")))
 	}
 
-	// Token info if available
-	// if msg.Token != nil {
-	// 	builder.WriteString("\n\n💰 Token Info:\n")
-	// 	builder.WriteString(fmt.Sprintf("🪙 %s (%s)\n", msg.Token.Symbol, msg.Token.Chain))
-	// 	if msg.Token.Price != "" {
-	// 		builder.WriteString(fmt.Sprintf("💵 Price: $%s\n", msg.Token.Price))
-	// 	}
-	// 	if msg.Token.MarketCap != "" {
-	// 		builder.WriteString(fmt.Sprintf("📊 Market Cap: $%s\n", msg.Token.MarketCap))
-	// 	}
-	// }
-
-	// Source info for reposts
+	// 4. Source / Repost Info
 	if msg.SourceUser != nil {
-		builder.WriteString("\n\n🔄 Original Tweet:\n")
-		builder.WriteString(fmt.Sprintf("👤 %s (@%s)\n", 
-			msg.SourceUser.Name, 
-			msg.SourceUser.ScreenName))
-		
-		if msg.SourceContent != nil {
-			builder.WriteString(fmt.Sprintf("💬 %s", msg.SourceContent.Text))
-			
-			// Show media info from source content
-			if len(msg.SourceContent.Media) > 0 {
-				var sourceMediaTypes []string
-				sourceImageCount := 0
-				sourceVideoCount := 0
-				
-				for _, media := range msg.SourceContent.Media {
-					switch media.Type {
-					case "image":
-						sourceImageCount++
-					case "video":
-						sourceVideoCount++
-					case "thumbnail":
-						// Skip thumbnails in count
-						continue
-					}
-				}
-				
-				if sourceImageCount > 0 {
-					if sourceImageCount == 1 {
-						sourceMediaTypes = append(sourceMediaTypes, "📸 1 Image")
-					} else {
-						sourceMediaTypes = append(sourceMediaTypes, fmt.Sprintf("📸 %d Images", sourceImageCount))
-					}
-				}
-				
-				if sourceVideoCount > 0 {
-					if sourceVideoCount == 1 {
-						sourceMediaTypes = append(sourceMediaTypes, "🎥 1 Video")
-					} else {
-						sourceMediaTypes = append(sourceMediaTypes, fmt.Sprintf("🎥 %d Videos", sourceVideoCount))
-					}
-				}
-				
-				if len(sourceMediaTypes) > 0 {
-					builder.WriteString(fmt.Sprintf("\n📎 Original Media: %s", strings.Join(sourceMediaTypes, ", ")))
-				}
+		builder.WriteString(fmt.Sprintf("\n\n🔄 <b>Replying/Quoting:</b>\n👤 <b>%s</b> (@%s)", 
+			esc(msg.SourceUser.Name), esc(msg.SourceUser.ScreenName)))
+		if msg.SourceContent != nil && msg.SourceContent.Text != "" {
+			text := esc(msg.SourceContent.Text)
+			if len(text) > 50 { 
+				text = text[:50] + "..." 
 			}
-		}
-		
-		// Add link to original tweet if source_id is available
-		if msg.SourceID != "" {
-			builder.WriteString(fmt.Sprintf("\n🔗 Original: https://x.com/%s/status/%s", 
-				msg.SourceUser.ScreenName, 
-				msg.SourceID))
+			builder.WriteString(fmt.Sprintf("\n<i>\"%s\"</i>", text))
 		}
 	}
 
-	builder.WriteString("\n\n---")
+	// 5. Build Buttons (Inline Keyboard)
+	var rows [][]tgbotapi.InlineKeyboardButton
+	
+	// Row 1: Tweet Link Action
+	var row1 []tgbotapi.InlineKeyboardButton
+	if msg.TweetID != "" {
+		url := fmt.Sprintf("https://x.com/%s/status/%s", msg.User.ScreenName, msg.TweetID)
+		row1 = append(row1, tgbotapi.NewInlineKeyboardButtonURL("🔗 Open Tweet", url))
+	}
+	
+	// Profile Link
+	profileUrl := fmt.Sprintf("https://x.com/%s", msg.User.ScreenName)
+	row1 = append(row1, tgbotapi.NewInlineKeyboardButtonURL("👤 Profile", profileUrl))
+	
+	rows = append(rows, row1)
 
-	return builder.String()
-}
+	// Additional Rows for specific actions
+	if msg.TweetType == "follow" || msg.TweetType == "unfollow" {
+		if msg.Action != nil && msg.Action.Follow != nil && msg.Action.Follow.Following != nil {
+			target := msg.Action.Follow.Following
+			targetUrl := fmt.Sprintf("https://x.com/%s", target.ScreenName)
+			rows = append(rows, tgbotapi.NewInlineKeyboardButtonRow(
+				tgbotapi.NewInlineKeyboardButtonURL(fmt.Sprintf("View %s", target.Name), targetUrl),
+			))
+		}
+	}
+	
+	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
+	return builder.String(), markup
 
 // formatWallet formats wallet data for Telegram
 func (tb *TelegramBot) formatWallet(wallet *Wallet) string {
