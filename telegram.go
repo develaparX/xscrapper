@@ -359,6 +359,33 @@ func (tb *TelegramBot) formatTwitterMessage(msg *TwitterMessage) string {
 				msg.User.Name, 
 				msg.User.ScreenName))
 		}
+	} else if msg.TweetType == "unfollow" && msg.Action != nil && msg.Action.Follow != nil {
+		// Unfollow action
+		builder.WriteString("🚫 Unfollow Action:\n")
+		followAction := msg.Action.Follow
+		
+		if followAction.Following != nil {
+			builder.WriteString(fmt.Sprintf("⬅️ Stopped following: %s (@%s)\n", 
+				followAction.Following.Name, 
+				followAction.Following.ScreenName))
+			
+			if followAction.Following.Followers > 0 {
+				builder.WriteString(fmt.Sprintf("👥 Target Followers: %s\n", formatNumber(followAction.Following.Followers)))
+			}
+		}
+	} else if msg.TweetType == "delete_post" {
+		builder.WriteString("🗑️ Deleted Tweet:\n")
+		if msg.Content.Text != "" {
+			builder.WriteString(msg.Content.Text)
+		} else {
+			builder.WriteString("(No content available)")
+		}
+	} else if msg.TweetType == "pin" {
+		builder.WriteString("📌 Pinned Tweet:\n")
+		builder.WriteString(msg.Content.Text)
+	} else if msg.TweetType == "unpin" {
+		builder.WriteString("📍 Unpinned Tweet:\n")
+		builder.WriteString(msg.Content.Text)
 	} else if msg.TweetType == "description" && msg.Profile != nil {
 		// Bio/Description change action
 		builder.WriteString("📝 Bio Update:\n")

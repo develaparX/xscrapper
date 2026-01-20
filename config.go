@@ -73,6 +73,7 @@ func LoadConfig() *Config {
 		TweetTypes: []string{
 			"tweet", "reply", "repost", "quote", "description",
 			"follow", "photo", "banner", "name", "handle",
+			"delete_post", "pin", "unpin", "unfollow",
 		},
 	}
 

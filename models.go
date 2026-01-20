@@ -13,6 +13,7 @@ type TwitterMessage struct {
 	ID            string         `json:"id"`
 	Platform      int            `json:"platform"`
 	TweetType     string         `json:"tw_type"`
+	SubTweetType  string         `json:"sub_tw_type,omitempty"`
 	TweetID       string         `json:"tweet_id"`
 	Complete      int            `json:"complete"`
 	Timestamp     string         `json:"tw_timestamp"`
